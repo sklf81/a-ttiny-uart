@@ -2,6 +2,8 @@
 #include <string.h>
 
 //reference: https://marcelmg.github.io/software_uart/
+//The code is written for the ATTiny861 Microcontroller
+
 #define TX_PORT PORTB
 
 #define TX_PIN 1
@@ -20,15 +22,6 @@
 
 #define RX_DDR_PIN 0 
 
-#define LED_DDR DDRB
-
-#define LED_PORT PORTB
-#define LED1 4
-#define LED2 5
-#define LED3 6
-
-
-typedef unsigned int uint32;
 typedef unsigned char byte;
 
 volatile uint16_t tx_shreg = 0;  //Shift-Register for Transmitter
@@ -43,8 +36,6 @@ volatile byte max_buffer_size = 6;
 
 ISR(TIMER0_COMPA_vect){
   cli();
-  
-  //LED_PORT ^= (1 << LED1);
 
   if(receiving_byte){
     byte local_rx_shreg = rx_shreg;
@@ -53,21 +44,19 @@ ISR(TIMER0_COMPA_vect){
     TCNT0L = 0;
 
     if(RX_PORT_IN & (1 << RX_PIN)){
-        //LED_PORT |= (1 << LED2);
         local_rx_shreg |= (1 << local_received_ctr);
       }
     else{
-      //LED_PORT &= ~(1 << LED2);
       local_rx_shreg &= ~(1 << local_received_ctr);
     }
     local_received_ctr += 1;
     
     //Normally you would check if the stop bit is equal to HIGH
     //But this is not necessary
-    if(local_received_ctr == 10){
-      LED_PORT ^= (1 << LED2);      
+    if(local_received_ctr == 10){      
       receiver_buffer[buffer_ctr] = local_rx_shreg;      
       buffer_ctr += (buffer_ctr < (max_buffer_size - 1)) ? 1 : 0;
+      
       local_received_ctr = 0;
       receiving_byte = 0;
       TCCR0B = 0;
@@ -89,7 +78,7 @@ ISR(TIMER0_COMPA_vect){
     tx_shreg = local_tx_shreg;  
   
     if(!local_tx_shreg){
-      //Deactivate Clock
+      //Deactivate Timer:
       TCCR0B = 0;
       TCNT0L = 0;
       transmitting = 0;
@@ -104,9 +93,9 @@ ISR(PCINT_vect) {
   cli();
   if(!(RX_PORT_IN & (1 << RX_PIN)) && !receiving_byte){
 
-    TCNT0L = 0;  
+    TCNT0L = 0;           //Set the Timer to 0x00
     TCCR0B = (1 << CS01); //Activate the Baud-Timer
-    receiving = 1;
+    receiving = 1;        //Set Flags
     receiving_byte = 1;
     
     rx_shreg = 0;   
@@ -119,13 +108,10 @@ ISR(PCINT_vect) {
 
 void UART_init(byte timer_compare){
   receiver_buffer = (char*)malloc(max_buffer_size * sizeof(char));
-  LED_DDR |= (1 << LED1);
-  LED_DDR |= (1 << LED2);
-  LED_DDR |= (1 << LED3);
   
   //TX-Pin as Output
   TX_DDR |= (1 << TX_DDR_PIN);
-  //Default Highs
+  //Default High
   TX_PORT |= (1 << TX_PIN);
   
   //RX-Pin as Input (pullup)
@@ -150,7 +136,7 @@ void UART_init(byte timer_compare){
   OCR0A = timer_compare;
 
   //Inititialise Pin-Change-Interrupt for RX-Pin
-  //PCINT8 is for PB0
+  //PCINT8 is for PB0 at ATTiny861
   GIMSK |= (1 << PCIE0);
   PCMSK1 = 0b00000001;
 
@@ -172,6 +158,7 @@ void UART_transmitByte(char character){
     local_tx_shreg = (character << 1);
     local_tx_shreg &= ~(1 << 0);
     local_tx_shreg |= (1 << 9);
+    
     tx_shreg = local_tx_shreg;
     TCCR0B = (1 << CS01);
     TCNT0L = 0;
@@ -190,10 +177,12 @@ void UART_resetReceiver(){
   cli();
   for(byte i = 0; i < max_buffer_size - 1; i++){
     receiver_buffer[i] = '\0';
-  }    
+  }
+      
   receiving = 0;
   receiving_byte = 0;
   buffer_ctr = 0;
   TCCR0B = 0;
-  sei;
+  
+  sei();
 }
